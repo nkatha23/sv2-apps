@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
-
-members = [ 
+members = [
     "jd-server",
-    "pool"
+    "pool",
+    "braidpool-common",
+    "braidpool-template-provider",
 ]
