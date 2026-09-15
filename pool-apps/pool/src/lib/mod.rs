@@ -1,5 +1,7 @@
 use error::PoolErrorKind;
 use pool_runtime::{Init, PoolRuntime};
+
+pub mod braidpool;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},

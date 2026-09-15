@@ -27,6 +27,7 @@ use jd_server_sv2::job_declarator::{
 
 use super::PoolSv2;
 use crate::{
+    braidpool::{ShareBridgeReceiver, create_share_bridge},
     channel_manager::ChannelManager,
     error::PoolErrorKind,
     template_receiver::{
@@ -105,6 +106,10 @@ pub(super) struct PoolRuntime<State> {
     bitcoin_core_sv2: Option<BitcoinCoreSv2Handle>,
     encoded_outputs: Vec<u8>,
     coinbase_outputs: Vec<TxOut>,
+    /// Receiver half of the Braidpool share bridge. Created in
+    /// `bootstrap_channel_manager` and kept alive here until PR 4 wires it
+    /// to the node IPC task via `propagate_valid_bead`.
+    share_bridge_receiver: Option<ShareBridgeReceiver>,
 }
 
 impl<State> PoolRuntime<State> {
@@ -117,6 +122,7 @@ impl<State> PoolRuntime<State> {
             bitcoin_core_sv2: self.bitcoin_core_sv2,
             encoded_outputs: self.encoded_outputs,
             coinbase_outputs: self.coinbase_outputs,
+            share_bridge_receiver: self.share_bridge_receiver,
         }
     }
 
@@ -191,6 +197,7 @@ impl PoolRuntime<Init> {
             bitcoin_core_sv2: None,
             coinbase_outputs,
             encoded_outputs,
+            share_bridge_receiver: None,
         })
     }
 
@@ -219,6 +226,7 @@ impl PoolRuntime<Init> {
             coinbase_outputs: self.coinbase_outputs,
             encoded_outputs: self.encoded_outputs,
             state: IoReady { io },
+            share_bridge_receiver: self.share_bridge_receiver,
         }
     }
 
@@ -357,6 +365,7 @@ impl PoolRuntime<IoReady> {
             coinbase_outputs: self.coinbase_outputs,
             encoded_outputs: self.encoded_outputs,
             state: new_state,
+            share_bridge_receiver: self.share_bridge_receiver,
         })
     }
 }
@@ -467,6 +476,7 @@ impl PoolRuntime<JdsReady> {
             coinbase_outputs: self.coinbase_outputs,
             encoded_outputs: self.encoded_outputs,
             state: new_state,
+            share_bridge_receiver: self.share_bridge_receiver,
         })
     }
 }
@@ -476,6 +486,8 @@ impl PoolRuntime<TemplateProviderReady> {
         self,
     ) -> Result<PoolRuntime<ChannelManagerReady>, (PoolErrorKind, PoolRuntime<TemplateProviderReady>)>
     {
+        let (share_bridge_sender, share_bridge_receiver) = create_share_bridge();
+
         let channel_manager = match ChannelManager::new(
             self.pool.config.clone(),
             self.state.io.channel_manager_to_tp_sender.clone(),
@@ -483,6 +495,7 @@ impl PoolRuntime<TemplateProviderReady> {
             self.state.io.downstream_to_channel_manager_receiver.clone(),
             self.encoded_outputs.clone(),
             self.jd.clone(),
+            Some(share_bridge_sender),
         )
         .await
         {
@@ -505,6 +518,7 @@ impl PoolRuntime<TemplateProviderReady> {
             coinbase_outputs: self.coinbase_outputs,
             encoded_outputs: self.encoded_outputs,
             state: new_state,
+            share_bridge_receiver: Some(share_bridge_receiver),
         })
     }
 }
@@ -612,6 +626,7 @@ impl PoolRuntime<ChannelManagerReady> {
             coinbase_outputs: self.coinbase_outputs,
             encoded_outputs: self.encoded_outputs,
             state: Running,
+            share_bridge_receiver: self.share_bridge_receiver,
         })
     }
 }
