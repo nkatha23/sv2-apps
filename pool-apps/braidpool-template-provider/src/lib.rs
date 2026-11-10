@@ -9,6 +9,7 @@ use stratum_core::{
     parsers_sv2::TemplateDistributionOwned,
     template_distribution_sv2::RequestTransactionDataErrorOwned,
 };
+use tokio::sync::watch;
 pub use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -29,7 +30,7 @@ pub use error::BraidpoolTemplateProviderError;
 /// * `sv2_incoming_rx` - Receiver for incoming SV2 messages (SubmitSolution etc.)
 /// * `cancellation_token` - Token for graceful shutdown
 pub async fn sv2_template_consumer(
-    mut template_rx: tokio::sync::mpsc::Receiver<BraidpoolTemplate>,
+    mut template_rx: watch::Receiver<Option<BraidpoolTemplate>>,
     sv2_outgoing_tx: Sender<TemplateDistributionOwned>,
     sv2_incoming_rx: Receiver<TemplateDistributionOwned>,
     cancellation_token: CancellationToken,
@@ -74,7 +75,11 @@ pub async fn sv2_template_consumer(
                 return Ok(());
             }
 
-            Some(template) = template_rx.recv() => {
+            Ok(_) = template_rx.changed() => {
+                let template = match template_rx.borrow_and_update().clone() {
+                    Some(t) => t,
+                    None => continue,
+                };
                 let template_id = template.template_id;
                 debug!(template_id, "Received BraidpoolTemplate");
 
